@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="CHQ Práctica">
+<meta name="theme-color" content="#123d27">
 <title>CHQ Programa de Práctica de Golf de 6 Días</title>
 <style>
 :root{
@@ -52,6 +55,9 @@ h2{font-size:21px}
 }
 .drill:first-of-type{border-top:0}
 .drill input{padding:7px}
+.resultado[readonly]{background:#eef5f0;border-color:#176b3a;color:#172019}
+button:disabled{opacity:.65;cursor:default}
+.aviso-bloqueo{padding:12px;background:#eef5f0;border-radius:8px;margin-top:14px;line-height:1.5}
 .check{width:20px;height:20px}
 .progress{height:10px;background:#e2e7e3;border-radius:10px;overflow:hidden;margin:8px 0}
 .bar{height:100%;background:var(--accent);width:0}
@@ -97,11 +103,17 @@ h2{font-size:21px}
 </div>
 
 <main class="wrap">
+  <div class="aviso-bloqueo">
+    Escribe tu nombre antes de registrar resultados. Cada resultado queda bloqueado al salir de su casilla o pulsar Enter.
+    Si una casilla pide varios resultados, escribe todos antes de salir. Los resultados bloqueados no se pueden cambiar ni borrar desde esta práctica.
+  </div>
+  <p id="estado" role="status" aria-live="polite"></p>
   <div id="tabs" class="tabs"></div>
   <div id="pages"></div>
   <div class="actions">
     <button onclick="guardarResultados()">GUARDAR RESULTADOS</button>
-    <button class="danger" onclick="resetStudent()">Borrar datos de este alumno</button>
+    <button class="secondary" onclick="cambiarAlumno()">Cambiar alumno</button>
+    <button class="secondary" disabled title="Los resultados registrados no se pueden borrar desde la práctica.">Resultados protegidos</button>
   </div>
   <div class="footer small">
     Los resultados se guardan automáticamente en este dispositivo.
@@ -480,38 +492,107 @@ function mostrar(i){
   scrollTo(0,0);
 }
 
-function enlazar(){
-  document.querySelectorAll('.resultado,.check').forEach(el=>el.addEventListener('input',guardar));
-  $('#student').oninput=guardarIdentidad;
-  $('#studentId').oninput=guardarIdentidad;
+function leerResultado(id){
+  const raw=localStorage.getItem(claveBase()+id);
+  try{return JSON.parse(raw||'{}');}
+  catch(error){
+    document.querySelector('#estado').textContent='No se pudo leer un resultado guardado. No continúes hasta revisar los datos.';
+    throw error;
+  }
 }
-
+function informar(texto){$('#estado').textContent=texto;}
+function tieneResultado(obj){return String(obj.resultado??'').trim()!=='';}
+function actualizarIdentidad(){
+  const hayBloqueados=!!$('#student').value.trim() && [...document.querySelectorAll('.resultado')].some(el=>el.readOnly);
+  $('#student').readOnly=hayBloqueados;
+  $('#studentId').readOnly=hayBloqueados;
+}
+function aplicarResultado(el,obj){
+  el.value=obj.resultado??'';
+  el.readOnly=!!obj.bloqueado;
+  el.disabled=!$('#student').value.trim();
+  el.title=obj.bloqueado?'Resultado bloqueado: no se puede modificar.':'Se bloquea al salir de la casilla o pulsar Enter.';
+  el.setAttribute('aria-readonly',String(!!obj.bloqueado));
+}
+function enlazar(){
+  document.querySelectorAll('.resultado').forEach(el=>{
+    el.addEventListener('input',guardar);
+    el.addEventListener('blur',()=>bloquearResultado(el));
+    el.addEventListener('keydown',e=>{
+      if(e.key==='Enter'){e.preventDefault();bloquearResultado(el);el.blur();}
+    });
+  });
+  document.querySelectorAll('.check').forEach(el=>el.addEventListener('input',guardar));
+  $('#student').onchange=guardarIdentidad;
+  $('#studentId').onchange=guardarIdentidad;
+}
 function guardarIdentidad(){
   localStorage.setItem('chq6:ultimoAlumno',$('#student').value);
   localStorage.setItem('chq6:ultimoId',$('#studentId').value);
   cargar();
 }
-
 function guardar(e){
-  let id=e.target.dataset.id;
-  let obj=JSON.parse(localStorage.getItem(claveBase()+id)||'{}');
-
-  if(e.target.classList.contains('resultado')) obj.resultado=e.target.value;
-  else obj.completado=e.target.checked;
-
-  localStorage.setItem(claveBase()+id,JSON.stringify(obj));
+  const el=e.target;
+  if(!$('#student').value.trim()){
+    informar('Escribe el nombre del alumno antes de registrar resultados.');
+    if(el.classList.contains('resultado'))el.value='';
+    else el.checked=false;
+    return;
+  }
+  const id=el.dataset.id;
+  const obj=leerResultado(id);
+  if(el.classList.contains('resultado')){
+    if(obj.bloqueado){aplicarResultado(el,obj);return;}
+    obj.resultado=el.value;
+  }else obj.completado=el.checked;
+  try{localStorage.setItem(claveBase()+id,JSON.stringify(obj));}
+  catch(error){
+    informar('No se pudo guardar el resultado en este dispositivo. No continúes hasta habilitar el almacenamiento del navegador.');
+    throw error;
+  }
   actualizarProgreso();
 }
-
+function bloquearResultado(el){
+  const obj=leerResultado(el.dataset.id);
+  if(obj.bloqueado){aplicarResultado(el,obj);return;}
+  if(!el.value.trim())return;
+  if(!$('#student').value.trim()){
+    informar('Escribe el nombre del alumno antes de registrar resultados.');
+    return;
+  }
+  const locked={...obj,resultado:el.value.trim(),bloqueado:true,bloqueadoEn:new Date().toISOString()};
+  try{localStorage.setItem(claveBase()+el.dataset.id,JSON.stringify(locked));}
+  catch(error){informar('No se pudo guardar el bloqueo. Mantén esta página abierta y revisa el almacenamiento del navegador.');throw error;}
+  aplicarResultado(el,locked);
+  actualizarIdentidad();
+  informar('Resultado bloqueado y guardado en este dispositivo.');
+}
 function cargar(){
   document.querySelectorAll('.resultado,.check').forEach(el=>{
-    let obj=JSON.parse(localStorage.getItem(claveBase()+el.dataset.id)||'{}');
-
-    if(el.classList.contains('resultado')) el.value=obj.resultado||'';
-    else el.checked=!!obj.completado;
+    const obj=leerResultado(el.dataset.id);
+    // Los resultados de la versión anterior se conservan y se protegen.
+    if(tieneResultado(obj)&&!obj.bloqueado){
+      obj.bloqueado=true;
+      obj.bloqueadoAnterior=true;
+      localStorage.setItem(claveBase()+el.dataset.id,JSON.stringify(obj));
+    }
+    if(el.classList.contains('resultado'))aplicarResultado(el,obj);
+    else{el.checked=!!obj.completado;el.disabled=!$('#student').value.trim();}
   });
-
+  actualizarIdentidad();
   actualizarProgreso();
+}
+function cambiarAlumno(){
+  document.querySelectorAll('.resultado').forEach(bloquearResultado);
+  $('#student').value='';
+  $('#studentId').value='';
+  $('#student').readOnly=false;
+  $('#studentId').readOnly=false;
+  localStorage.setItem('chq6:ultimoAlumno','');
+  localStorage.setItem('chq6:ultimoId','');
+  cargar();
+  informar('Escribe el nombre del otro alumno. Los resultados anteriores siguen guardados y bloqueados.');
+  $('#student').focus();
 }
 
 function actualizarProgreso(){
@@ -552,7 +633,9 @@ function recopilar(){
 
         so.ejercicios.push({
           ejercicio:texto,
-          resultado:o.resultado||'',
+          resultado:o.resultado??'',
+          bloqueado:!!o.bloqueado,
+          bloqueadoEn:o.bloqueadoEn||'',
           completado:!!o.completado
         });
       });
@@ -566,7 +649,15 @@ function recopilar(){
   return out;
 }
 
+let enviandoResultados=false;
 async function guardarResultados(){
+  if(enviandoResultados)return;
+  if(!$('#student').value.trim()){
+    alert("Escribe el nombre del alumno antes de guardar.");
+    return;
+  }
+  try{document.querySelectorAll('.resultado').forEach(bloquearResultado);}
+  catch(error){alert('No se pudieron guardar todos los resultados en este dispositivo.');return;}
   const datos=recopilar();
 
   if(!datos.alumno.trim()){
@@ -576,6 +667,7 @@ async function guardarResultados(){
 
   const url="https://script.google.com/macros/s/AKfycbxXTs2EzsmYhZiRhXJvBHd8rZ27DI3W9wWYsJjjfSTRruvUcQhkrZaDDGTDer5vRkKs/exec";
 
+  enviandoResultados=true;
   try{
     await fetch(url,{
       method:"POST",
@@ -584,22 +676,16 @@ async function guardarResultados(){
       body:JSON.stringify(datos)
     });
 
-    alert("Resultados enviados al coach y guardados en este dispositivo.");
+    informar("Solicitud de envío realizada. Los resultados están guardados y bloqueados en este dispositivo. Revisa Google Sheets para confirmar la recepción.");
+    alert("Solicitud de envío realizada. Revisa Google Sheets para confirmar que llegaron los resultados.");
   }catch(error){
     console.error(error);
     alert("Los resultados siguen guardados en este dispositivo, pero no se pudieron enviar al coach.");
-  }
+  }finally{enviandoResultados=false;}
 }
 
 function resetStudent(){
-  if(confirm("¿Borrar todos los resultados guardados de este alumno en este navegador?")){
-    let pre=claveBase();
-    Object.keys(localStorage)
-      .filter(k=>k.startsWith(pre))
-      .forEach(k=>localStorage.removeItem(k));
-
-    cargar();
-  }
+  informar('Los resultados bloqueados no se pueden borrar desde esta práctica.');
 }
 
 $('#student').value=localStorage.getItem('chq6:ultimoAlumno')||'';
