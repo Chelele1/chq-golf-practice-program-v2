@@ -1,8 +1,15 @@
 {
-  "name": "CHQ Programa de Pr\u00e1ctica de Golf de 6 D\u00edas",
-  "short_name": "CHQ 6 Days",
+  "name": "Chq Práctica 6 días",
+  "short_name": "Chq Práctica 6 días",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#f4f7f4",
-  "theme_color": "#123d27"
+  "theme_color": "#123d27",
+  "icons": [
+    {
+      "src": "./chq-logo.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
 }
