@@ -6,6 +6,13 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="CHQ Práctica">
 <meta name="theme-color" content="#123d27">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="application-name" content="CHQ Golf Practice">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+
 <title>CHQ Programa de Práctica de Golf de 6 Días</title>
 <style>
 :root{
@@ -692,6 +699,13 @@ $('#student').value=localStorage.getItem('chq6:ultimoAlumno')||'';
 $('#studentId').value=localStorage.getItem('chq6:ultimoId')||'';
 
 render();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(error => console.warn('PWA offline:', error));
+  });
+}
 </script>
 </body>
 </html>
