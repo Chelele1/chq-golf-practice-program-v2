@@ -46,6 +46,7 @@ h1,h2,h3{margin:0 0 10px}h2{font-size:21px}.meta{color:var(--muted);font-size:13
   <div id="pages"></div>
   <div class="actions">
     <button onclick="guardarResultados()">GUARDAR RESULTADOS</button>
+    <button type="button" class="secondary" onclick="respaldoCompletoCHQ()">DESCARGAR RESPALDO DE ESTE DISPOSITIVO</button>
     <button class="danger" onclick="resetStudent()">Borrar datos de este alumno</button>
   </div>
   <div class="footer small">Los resultados se guardan automáticamente en este dispositivo. Pulsa GUARDAR RESULTADOS para enviarlos al coach.</div>
@@ -378,26 +379,44 @@ function cargar(){document.querySelectorAll('.resultado,.check').forEach(el=>{le
 function actualizarProgreso(){document.querySelectorAll('.page').forEach(pg=>{let checks=[...pg.querySelectorAll('.check')],done=checks.filter(x=>x.checked).length,pct=checks.length?done/checks.length*100:0;pg.querySelector('.bar').style.width=pct+'%';pg.querySelector('.progtext').textContent=`${done} / ${checks.length} completados (${Math.round(pct)}%)`})}
 function recopilar(){let out={alumno:$('#student').value,id:$('#studentId').value,exportado:new Date().toISOString(),paginas:[]};programa.forEach((p,pi)=>{let po={titulo:p.titulo,secciones:[]};p.secciones.forEach((s,si)=>{let so={titulo:s[0],ejercicios:[]};s[1].forEach((d,di)=>{let id=`${p.key}-${si}-${di}`,o=JSON.parse(localStorage.getItem(claveBase()+id)||'{}');so.ejercicios.push({ejercicio:d,resultado:o.resultado||'',completado:!!o.completado})});po.secciones.push(so)});out.paginas.push(po)});return out}
 function descargar(nombre,texto,tipo){let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([texto],{type:tipo}));a.download=nombre;document.body.appendChild(a);a.click();a.remove()}
+
+let chqEnvioEnCurso=false;
+function respaldoCompletoCHQ(){
+  const entradas={};
+  try{
+    Object.keys(localStorage).filter(k=>k.startsWith('chq6:')).forEach(k=>entradas[k]=localStorage.getItem(k));
+    descargar('CHQ-6-dias-respaldo-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify({app:'CHQ_6DAY_DEVICE_BACKUP',version:1,exportado:new Date().toISOString(),entradas},null,2),'application/json');
+  }catch(error){alert('No se pudo descargar el respaldo. No borres los datos de este navegador.');}
+}
 async function guardarResultados(){
-  const datos = recopilar();
-
-  if (!datos.alumno.trim()) {
-    alert("Escribe el nombre del alumno antes de guardar.");
-    return;
-  }
-
-  const url = "https://script.google.com/macros/s/AKfycbwFLnTcHCY8RvhHSlZiYYxxR_Z-5dMcImKcHkrrNTFGc-Mo3IWeCKvVHThOEbVd-1A/exec";
-
-  try {
-    await fetch(url, {
-      method: "POST",
-      mode: "no-cors",
-      headers: {"Content-Type": "text/plain;charset=utf-8"},
-      body: JSON.stringify(datos)
+  if(chqEnvioEnCurso)return;
+  const datos=recopilar();
+  if(!datos.alumno.trim()){alert('Escribe el nombre del alumno antes de guardar.');return;}
+  const cantidad=datos.paginas.reduce((n,p)=>n+p.secciones.reduce((m,s)=>m+s.ejercicios.filter(e=>e.resultado!==''||e.completado===true).length,0),0);
+  if(!cantidad){alert('No hay resultados para enviar. Comprueba el nombre y el ID del alumno para cargar sus resultados guardados.');return;}
+  const huella=JSON.stringify([datos.alumno,datos.id,datos.paginas]);
+  const confirmacion=claveBase()+'envioConfirmado';
+  try{if(localStorage.getItem(confirmacion)===huella){alert('Google Sheets ya confirmó estos mismos resultados. No se han enviado otra vez.');return;}}catch{}
+  const botones=[...document.querySelectorAll('button[onclick="guardarResultados()"]')];
+  const anteriores=botones.map(b=>({disabled:b.disabled,text:b.textContent}));
+  chqEnvioEnCurso=true;botones.forEach(b=>{b.disabled=true;b.textContent='ENVIANDO…';});
+  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),90000);
+  let confirmado=false;
+  try{
+    const response=await fetch('https://script.google.com/macros/s/AKfycbxXTs2EzsmYhZiRhXJvBHd8rZ27DI3W9wWYsJjjfSTRruvUcQhkrZaDDGTDer5vRkKs/exec',{
+      method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(datos),signal:controller.signal
     });
-    alert("Resultados enviados al coach y guardados en este dispositivo.");
-  } catch (error) {
-    alert("Los resultados siguen guardados en este dispositivo, pero no se pudieron enviar al coach.");
+    const respuesta=(await response.text()).trim();
+    if(!response.ok||respuesta!=='OK')throw new Error('Guardado central no confirmado');
+    confirmado=true;
+    try{localStorage.setItem(confirmacion,huella);}catch{}
+    alert('Google Sheets confirmó el guardado de '+cantidad+' resultados en «6-Day Practice - Results».');
+  }catch(error){
+    console.error('CHQ: envío no confirmado',error);
+    alert(confirmado?'Google Sheets confirmó el envío.':'NO se confirmó el guardado en Google Sheets. Conserva este dispositivo y descarga un respaldo. Si el envío se interrumpió, comprueba la hoja antes de repetirlo.');
+  }finally{
+    clearTimeout(timeout);chqEnvioEnCurso=false;
+    botones.forEach((b,i)=>{b.disabled=anteriores[i].disabled;b.textContent=anteriores[i].text;});
   }
 }
 
